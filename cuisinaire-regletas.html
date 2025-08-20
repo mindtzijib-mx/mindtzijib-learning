@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Regletas de Cuisenaire con IA</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body {
+        font-family: "Inter", sans-serif;
+        touch-action: none;
+      }
+      canvas {
+        cursor: grab;
+        background-image: linear-gradient(
+            rgba(0, 0, 0, 0.05) 1px,
+            transparent 1px
+          ),
+          linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+      canvas:active {
+        cursor: grabbing;
+      }
+      /* Estilos para el modal de Gemini */
+      #geminiModal {
+        transition: opacity 0.3s ease;
+      }
+      /* Animación del spinner */
+      .loader {
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #3498db;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body
+    class="bg-slate-100 text-slate-800 flex flex-col items-center justify-center min-h-screen p-4"
+  >
+    <div
+      class="w-full max-w-5xl bg-white rounded-xl shadow-lg p-4 sm:p-6 relative"
+    >
+      <header class="text-center mb-4">
+        <h1 class="text-2xl sm:text-3xl font-bold text-slate-700">
+          Regletas de Cuisenaire con IA
+        </h1>
+        <p class="text-sm sm:text-base text-slate-500">
+          Arrastra, alinea y suma. Haz doble clic para eliminar una regleta.
+        </p>
+      </header>
+
+      <div
+        id="totalSumContainer"
+        class="text-center mb-4 p-3 bg-blue-100 border border-blue-300 rounded-lg"
+      >
+        <span class="text-lg font-medium text-slate-600"
+          >Suma Total en el Lienzo:</span
+        >
+        <span id="totalSum" class="text-2xl font-bold text-blue-600">0</span>
+      </div>
+
+      <div
+        id="palette"
+        class="bg-slate-200/60 rounded-lg p-3 mb-4 flex flex-wrap justify-center items-center gap-3"
+      ></div>
+
+      <canvas
+        id="mainCanvas"
+        class="w-full h-96 bg-white border-2 border-slate-300 rounded-lg shadow-inner"
+      ></canvas>
+
+      <div class="mt-4 flex flex-wrap justify-center gap-4">
+        <button
+          id="geminiButton"
+          class="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-2 px-5 rounded-lg shadow-md transition-transform transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          ✨ Explicar Suma
+        </button>
+        <button
+          id="clearButton"
+          class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-5 rounded-lg shadow-md transition-transform transform hover:scale-105 active:scale-95"
+        >
+          Limpiar Lienzo
+        </button>
+      </div>
+
+      <!-- Modal para la respuesta de Gemini -->
+      <div
+        id="geminiModal"
+        class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 rounded-xl hidden"
+      >
+        <div
+          class="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full relative"
+        >
+          <button
+            id="closeGeminiModal"
+            class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800"
+          >
+            &times;
+          </button>
+          <div id="geminiResponseContainer" class="text-slate-700">
+            <!-- El contenido se insertará aquí -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // --- CONFIGURACIÓN INICIAL ---
+      const canvas = document.getElementById("mainCanvas");
+      const ctx = canvas.getContext("2d");
+      const paletteContainer = document.getElementById("palette");
+      const clearButton = document.getElementById("clearButton");
+      const totalSumElement = document.getElementById("totalSum");
+      const geminiButton = document.getElementById("geminiButton");
+      const geminiModal = document.getElementById("geminiModal");
+      const geminiResponseContainer = document.getElementById(
+        "geminiResponseContainer"
+      );
+      const closeGeminiModal = document.getElementById("closeGeminiModal");
+
+      const ROD_SPECS = [
+        { value: 1, color: "#FFFFFF", textColor: "#333333", name: "Blanca" },
+        { value: 2, color: "#FF0000", textColor: "#FFFFFF", name: "Roja" },
+        {
+          value: 3,
+          color: "#90EE90",
+          textColor: "#333333",
+          name: "Verde Claro",
+        },
+        { value: 4, color: "#FFC0CB", textColor: "#333333", name: "Rosa" },
+        { value: 5, color: "#FFFF00", textColor: "#333333", name: "Amarilla" },
+        {
+          value: 6,
+          color: "#008000",
+          textColor: "#FFFFFF",
+          name: "Verde Oscuro",
+        },
+        { value: 7, color: "#000000", textColor: "#FFFFFF", name: "Negra" },
+        { value: 8, color: "#A52A2A", textColor: "#FFFFFF", name: "Marrón" },
+        { value: 9, color: "#0000FF", textColor: "#FFFFFF", name: "Azul" },
+        { value: 10, color: "#FFA500", textColor: "#FFFFFF", name: "Naranja" },
+      ];
+
+      const ROD_HEIGHT = 40;
+      const BASE_WIDTH = 40;
+      const SNAP_THRESHOLD = 15;
+      const GRID_SIZE = 5;
+
+      let canvasRods = [];
+      let selectedRod = null;
+      let isDragging = false;
+      let dragOffsetX = 0;
+      let dragOffsetY = 0;
+
+      // --- FUNCIONES DE LA API DE GEMINI ---
+
+      /**
+       * Llama a la API de Gemini para obtener una explicación de la suma.
+       * @param {number} sum - La suma total a explicar.
+       */
+      async function getExplanationFromGemini(sum) {
+        geminiButton.disabled = true;
+        geminiResponseContainer.innerHTML =
+          '<div class="flex flex-col items-center"><div class="loader"></div><p class="mt-3 text-slate-500">Creando una historia para ti...</p></div>';
+        geminiModal.classList.remove("hidden");
+
+        const prompt = `Eres un profesor de primaria amigable y creativo. Crea un problema matemático muy simple y visual para un niño, donde la respuesta sea ${sum}. Usa ejemplos del mundo real como juguetes, frutas o animales. Termina con la operación matemática. Por ejemplo, si la suma es 5, podrías decir: 'Imagina que tienes 2 gatitos jugando y de repente llegan 3 más. ¿Cuántos gatitos tienes ahora? ¡Correcto, 5 gatitos! 2 + 3 = 5'.`;
+
+        let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+        const payload = { contents: chatHistory };
+        const apiKey = ""; // Se proporciona en el entorno de ejecución
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+        try {
+          const response = await fetch(apiUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const result = await response.json();
+          if (
+            result.candidates &&
+            result.candidates[0] &&
+            result.candidates[0].content.parts[0].text
+          ) {
+            const explanation =
+              result.candidates[0].content.parts[0].text.replace(/\n/g, "<br>");
+            geminiResponseContainer.innerHTML = `<h3 class="text-lg font-bold mb-2 text-indigo-600">✨ ¡Vamos a sumar!</h3><p>${explanation}</p>`;
+          } else {
+            throw new Error("Respuesta inesperada de la API.");
+          }
+        } catch (error) {
+          console.error("Error al llamar a la API de Gemini:", error);
+          geminiResponseContainer.innerHTML =
+            '<p class="text-red-500">¡Oh no! No pude conectar con mi ayudante IA. Por favor, inténtalo de nuevo más tarde.</p>';
+        } finally {
+          geminiButton.disabled = false;
+        }
+      }
+
+      // --- FUNCIONES DE CÁLCULO Y DIBUJO ---
+
+      function updateTotalSum() {
+        const total = canvasRods.reduce((sum, rod) => sum + rod.value, 0);
+        totalSumElement.textContent = total;
+        // Habilitar o deshabilitar el botón de Gemini
+        geminiButton.disabled = total === 0;
+      }
+
+      function drawRod(rod) {
+        ctx.fillStyle = rod.color;
+        ctx.strokeStyle = "#4A5568";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.roundRect(rod.x, rod.y, rod.width, rod.height, [4]);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = rod.textColor;
+        ctx.font = "bold 16px Inter";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(rod.value, rod.x + rod.width / 2, rod.y + rod.height / 2);
+      }
+
+      function redrawCanvas() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        canvasRods.forEach(drawRod);
+        if (isDragging && selectedRod) {
+          drawRod(selectedRod);
+        }
+      }
+
+      function createPalette() {
+        ROD_SPECS.forEach((spec) => {
+          const rodEl = document.createElement("div");
+          rodEl.style.width = `${spec.value * BASE_WIDTH * 0.75}px`;
+          rodEl.style.height = `${ROD_HEIGHT * 0.75}px`;
+          rodEl.style.backgroundColor = spec.color;
+          rodEl.style.border = "2px solid #4A5568";
+          rodEl.style.borderRadius = "4px";
+          rodEl.style.display = "flex";
+          rodEl.style.alignItems = "center";
+          rodEl.style.justifyContent = "center";
+          rodEl.style.color = spec.textColor;
+          rodEl.style.fontWeight = "bold";
+          rodEl.style.cursor = "grab";
+          rodEl.className =
+            "palette-rod transition-transform transform hover:scale-110";
+          rodEl.innerText = spec.value;
+          rodEl.dataset.value = spec.value;
+
+          rodEl.addEventListener("mousedown", handlePaletteDragStart);
+          rodEl.addEventListener("touchstart", handlePaletteDragStart, {
+            passive: false,
+          });
+
+          paletteContainer.appendChild(rodEl);
+        });
+      }
+
+      // --- MANEJO DE EVENTOS ---
+
+      function getEventCoords(e) {
+        const rect = canvas.getBoundingClientRect();
+        if (e.touches && e.touches.length > 0) {
+          return {
+            x: e.touches[0].clientX - rect.left,
+            y: e.touches[0].clientY - rect.top,
+          };
+        }
+        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      }
+
+      function handlePaletteDragStart(e) {
+        e.preventDefault();
+        const value = parseInt(e.target.dataset.value);
+        const spec = ROD_SPECS.find((s) => s.value === value);
+        const coords = getEventCoords(e);
+
+        selectedRod = {
+          ...spec,
+          width: spec.value * BASE_WIDTH,
+          height: ROD_HEIGHT,
+          x: coords.x - (spec.value * BASE_WIDTH) / 2,
+          y: coords.y - ROD_HEIGHT / 2,
+          isNew: true,
+        };
+        isDragging = true;
+        dragOffsetX = (spec.value * BASE_WIDTH) / 2;
+        dragOffsetY = ROD_HEIGHT / 2;
+        redrawCanvas();
+      }
+
+      function handleCanvasMouseDown(e) {
+        e.preventDefault();
+        const coords = getEventCoords(e);
+        for (let i = canvasRods.length - 1; i >= 0; i--) {
+          const rod = canvasRods[i];
+          if (
+            coords.x >= rod.x &&
+            coords.x <= rod.x + rod.width &&
+            coords.y >= rod.y &&
+            coords.y <= rod.y + rod.height
+          ) {
+            selectedRod = rod;
+            canvasRods.splice(i, 1);
+            canvasRods.push(selectedRod);
+            isDragging = true;
+            dragOffsetX = coords.x - rod.x;
+            dragOffsetY = coords.y - rod.y;
+            break;
+          }
+        }
+        redrawCanvas();
+      }
+
+      function handleMouseMove(e) {
+        if (!isDragging || !selectedRod) return;
+        e.preventDefault();
+        const coords = getEventCoords(e);
+        const rawX = coords.x - dragOffsetX;
+        const rawY = coords.y - dragOffsetY;
+        selectedRod.x = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
+        selectedRod.y = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
+        redrawCanvas();
+      }
+
+      function handleMouseUp(e) {
+        if (!isDragging || !selectedRod) return;
+        let snapped = false;
+        const otherRods = canvasRods.filter((r) => r !== selectedRod);
+        for (const otherRod of otherRods) {
+          if (
+            Math.abs(otherRod.x + otherRod.width - selectedRod.x) <
+            SNAP_THRESHOLD
+          ) {
+            selectedRod.x = otherRod.x + otherRod.width;
+            snapped = true;
+          }
+          if (
+            Math.abs(otherRod.x - (selectedRod.x + selectedRod.width)) <
+            SNAP_THRESHOLD
+          ) {
+            selectedRod.x = otherRod.x - selectedRod.width;
+            snapped = true;
+          }
+          if (
+            Math.abs(otherRod.y + otherRod.height - selectedRod.y) <
+            SNAP_THRESHOLD
+          ) {
+            selectedRod.y = otherRod.y + otherRod.height;
+            snapped = true;
+          }
+          if (
+            Math.abs(otherRod.y - (selectedRod.y + selectedRod.height)) <
+            SNAP_THRESHOLD
+          ) {
+            selectedRod.y = otherRod.y - selectedRod.height;
+            snapped = true;
+          }
+          if (snapped) break;
+        }
+        if (selectedRod.isNew) {
+          delete selectedRod.isNew;
+          canvasRods.push(selectedRod);
+        }
+        isDragging = false;
+        selectedRod = null;
+        redrawCanvas();
+        updateTotalSum();
+      }
+
+      function handleCanvasDoubleClick(e) {
+        e.preventDefault();
+        const coords = getEventCoords(e);
+        let foundIndex = -1;
+        for (let i = canvasRods.length - 1; i >= 0; i--) {
+          const rod = canvasRods[i];
+          if (
+            coords.x >= rod.x &&
+            coords.x <= rod.x + rod.width &&
+            coords.y >= rod.y &&
+            coords.y <= rod.y + rod.height
+          ) {
+            foundIndex = i;
+            break;
+          }
+        }
+        if (foundIndex !== -1) {
+          canvasRods.splice(foundIndex, 1);
+          redrawCanvas();
+          updateTotalSum();
+        }
+      }
+
+      function resizeCanvas() {
+        canvas.width = canvas.clientWidth;
+        canvas.height = canvas.clientHeight;
+        redrawCanvas();
+      }
+
+      clearButton.addEventListener("click", () => {
+        canvasRods = [];
+        redrawCanvas();
+        updateTotalSum();
+      });
+
+      geminiButton.addEventListener("click", () => {
+        const total = canvasRods.reduce((sum, rod) => sum + rod.value, 0);
+        if (total > 0) {
+          getExplanationFromGemini(total);
+        }
+      });
+
+      closeGeminiModal.addEventListener("click", () => {
+        geminiModal.classList.add("hidden");
+      });
+
+      canvas.addEventListener("mousedown", handleCanvasMouseDown);
+      canvas.addEventListener("touchstart", handleCanvasMouseDown, {
+        passive: false,
+      });
+      canvas.addEventListener("dblclick", handleCanvasDoubleClick);
+      window.addEventListener("mousemove", handleMouseMove);
+      window.addEventListener("touchmove", handleMouseMove, { passive: false });
+      window.addEventListener("mouseup", handleMouseUp);
+      window.addEventListener("touchend", handleMouseUp);
+      window.addEventListener("resize", resizeCanvas);
+
+      // --- EJECUCIÓN INICIAL ---
+      createPalette();
+      resizeCanvas();
+      updateTotalSum();
+    </script>
+  </body>
+</html>
