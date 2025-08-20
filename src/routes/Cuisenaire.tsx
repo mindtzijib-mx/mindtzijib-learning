@@ -106,7 +106,21 @@ export default function Cuisenaire() {
 
   const handlePointerUp = () => {
     if (newRod) {
-      setRods((prev: Rod[]) => [...prev, newRod]);
+      // Only commit the new rod if it's actually inside (or intersecting) the canvas area.
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const { width: cw, height: ch } = canvas;
+        const intersects =
+          newRod.x + newRod.width > 0 &&
+          newRod.x < cw &&
+          newRod.y + newRod.height > 0 &&
+          newRod.y < ch;
+        if (intersects) {
+          setRods((prev: Rod[]) => [...prev, newRod]);
+          // Optionally select the rod when placed
+          setSelectedId(newRod.id);
+        }
+      }
       setNewRod(null);
     }
     setDragging(null);
