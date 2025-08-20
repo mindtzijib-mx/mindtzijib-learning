@@ -12,6 +12,7 @@ interface Rod extends RodSpec {
   y: number;
   width: number;
   height: number;
+  orientation: "h" | "v"; // horizontal or vertical
 }
 
 const ROD_SPECS: RodSpec[] = [
@@ -45,6 +46,8 @@ export default function Cuisenaire() {
   const [showValues, setShowValues] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const nextIdRef = useRef(1);
   // IA eliminada: ya no se usa explicación automatizada
 
@@ -69,6 +72,7 @@ export default function Cuisenaire() {
       ...spec,
       width: spec.value * BASE_WIDTH,
       height: ROD_HEIGHT,
+      orientation: "h",
       x,
       y,
     });
@@ -137,34 +141,40 @@ export default function Cuisenaire() {
     };
   });
 
-  const snap = (v: number) =>
-    showGrid
-      ? Math.round(v / (GRID_BASE * GRID_VISUAL_MULT)) *
-        (GRID_BASE * GRID_VISUAL_MULT)
-      : v;
+  const snap = useCallback(
+    (v: number) =>
+      showGrid
+        ? Math.round(v / (GRID_BASE * GRID_VISUAL_MULT)) *
+          (GRID_BASE * GRID_VISUAL_MULT)
+        : v,
+    [showGrid]
+  );
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d")!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Logical (CSS) size (context already scaled in resize effect)
+    const logicalW = canvas.clientWidth;
+    const logicalH = canvas.clientHeight;
+    ctx.clearRect(0, 0, logicalW, logicalH);
 
     // Draw grid if enabled
     if (showGrid) {
-      const step = GRID_BASE * GRID_VISUAL_MULT; // coincide con snapping
+      const step = GRID_BASE * GRID_VISUAL_MULT; // coincide con snapping (en unidades lógicas)
       ctx.save();
       ctx.strokeStyle = "rgba(0,0,0,0.08)";
       ctx.lineWidth = 1;
-      for (let x = 0; x <= canvas.width; x += step) {
+      for (let x = 0; x <= logicalW; x += step) {
         ctx.beginPath();
         ctx.moveTo(x + 0.5, 0);
-        ctx.lineTo(x + 0.5, canvas.height);
+        ctx.lineTo(x + 0.5, logicalH);
         ctx.stroke();
       }
-      for (let y = 0; y <= canvas.height; y += step) {
+      for (let y = 0; y <= logicalH; y += step) {
         ctx.beginPath();
         ctx.moveTo(0, y + 0.5);
-        ctx.lineTo(canvas.width, y + 0.5);
+        ctx.lineTo(logicalW, y + 0.5);
         ctx.stroke();
       }
       ctx.restore();
@@ -203,22 +213,79 @@ export default function Cuisenaire() {
     if (newRod) drawRod(newRod);
   }, [rods, newRod, showGrid, showValues, selectedId]);
 
+  // Track fullscreen changes
   useEffect(() => {
-    draw();
+    const handler = () => {
+      const el = document.fullscreenElement;
+      const fs = el === containerRef.current;
+      setIsFullscreen(fs);
+      // force a resize of canvas (our resize effect listens to window resize, but some browsers don't emit it)
+      // manually trigger by calling draw after setting dimensions
+      if (canvasRef.current) {
+        // Dispatch a resize by toggling a style recalculation and relying on ResizeObserver
+        requestAnimationFrame(() => draw());
+      }
+      // If exiting fullscreen, clear rods & selection so total resets
+      if (!fs) {
+        setRods([]);
+        setNewRod(null);
+        setSelectedId(null);
+      }
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
   }, [draw]);
 
-  // Resize canvas (placed after draw definition)
+  // Resize / scale canvas (retina) and restore original h-96 outside fullscreen
   useEffect(() => {
-    const canvas = canvasRef.current!;
+    const canvas = canvasRef.current;
+    const container = containerRef.current;
+    if (!canvas || !container) return;
+
     const resize = () => {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+      const ratio = window.devicePixelRatio || 1;
+      if (isFullscreen) {
+        const w = container.clientWidth;
+        const h = container.clientHeight;
+        if (
+          canvas.style.width !== `${w}px` ||
+          canvas.style.height !== `${h}px`
+        ) {
+          canvas.style.width = `${w}px`;
+          canvas.style.height = `${h}px`;
+        }
+      } else {
+        // allow Tailwind classes (w-full h-96) to control layout
+        if (canvas.style.width || canvas.style.height) {
+          canvas.style.width = "";
+          canvas.style.height = "";
+        }
+      }
+      const wLogical = canvas.clientWidth; // after potential style changes
+      const hLogical = canvas.clientHeight;
+      const targetW = Math.floor(wLogical * ratio);
+      const targetH = Math.floor(hLogical * ratio);
+      if (canvas.width !== targetW || canvas.height !== targetH) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(ratio, ratio);
+      }
       draw();
     };
+
+    const ro = new ResizeObserver(() => resize());
+    ro.observe(container);
     resize();
-    window.addEventListener("resize", resize);
-    return () => window.removeEventListener("resize", resize);
-  }, [draw]);
+    window.addEventListener("orientationchange", resize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("orientationchange", resize);
+    };
+  }, [draw, isFullscreen]);
 
   // When enabling grid, snap existing rods
   useEffect(() => {
@@ -236,6 +303,7 @@ export default function Cuisenaire() {
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
+    let found = false;
     for (let i = rods.length - 1; i >= 0; i--) {
       const r = rods[i];
       if (x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height) {
@@ -256,8 +324,12 @@ export default function Cuisenaire() {
           }
           return copy;
         });
+        found = true;
         break;
       }
+    }
+    if (!found) {
+      setSelectedId(null);
     }
   };
 
@@ -293,10 +365,52 @@ export default function Cuisenaire() {
         setRods((prev) => prev.filter((r) => r.id !== selectedId));
         setSelectedId(null);
       }
+      if ((e.key === "r" || e.key === "R") && selectedId !== null) {
+        setRods((prev) =>
+          prev.map((r) => {
+            if (r.id !== selectedId) return r;
+            const canvas = canvasRef.current;
+            // swap width & height and orientation
+            const newWidth = r.height;
+            const newHeight = r.width;
+            let newX = r.x;
+            let newY = r.y;
+            if (canvas) {
+              // keep within bounds after rotation
+              if (newX + newWidth > canvas.width)
+                newX = canvas.width - newWidth;
+              if (newY + newHeight > canvas.height)
+                newY = canvas.height - newHeight;
+              if (newX < 0) newX = 0;
+              if (newY < 0) newY = 0;
+            }
+            if (showGrid) {
+              newX = snap(newX);
+              newY = snap(newY);
+            }
+            return {
+              ...r,
+              width: newWidth,
+              height: newHeight,
+              x: newX,
+              y: newY,
+              orientation: r.orientation === "h" ? "v" : "h",
+            };
+          })
+        );
+      }
+      if (e.key === "f" || e.key === "F") {
+        // toggle fullscreen
+        if (!document.fullscreenElement) {
+          containerRef.current?.requestFullscreen().catch(() => {});
+        } else if (document.fullscreenElement === containerRef.current) {
+          document.exitFullscreen().catch(() => {});
+        }
+      }
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [selectedId]);
+  }, [selectedId, showGrid, snap]);
 
   // Función de explicación eliminada
 
@@ -307,64 +421,214 @@ export default function Cuisenaire() {
           Regletas de Cuisenaire
         </h2>
         <p className="text-slate-500 text-sm">
-          Arrastra, alinea y suma. Doble clic para eliminar. Click para
-          seleccionar (Delete para borrar).
+          Arrastra, alinea y suma. Doble clic para eliminar.
         </p>
       </div>
-      <div className="p-3 bg-blue-100 border border-blue-300 rounded-lg flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
-        <div className="text-center sm:text-left">
-          <span className="text-lg font-medium text-slate-600 font-display">
-            Suma Total:
-          </span>{" "}
-          <span className="text-2xl font-bold text-blue-600 font-display">
-            {total}
-          </span>
+      {/* Separador superior */}
+      <div className="p-2" />
+      {!isFullscreen && (
+        <div className="flex flex-wrap gap-3 items-center justify-center bg-slate-200/60 rounded-lg p-3">
+          {ROD_SPECS.map((spec) => (
+            <button
+              key={spec.value}
+              type="button"
+              onPointerDown={(e) =>
+                startFromPalette(spec, e.clientX, e.clientY)
+              }
+              className="transition-transform hover:scale-110 border-2 border-slate-600 rounded flex items-center justify-center font-bold cursor-grab active:cursor-grabbing"
+              style={{
+                width: spec.value * BASE_WIDTH * 0.75,
+                height: ROD_HEIGHT * 0.75,
+                background: spec.color,
+                color: spec.textColor,
+              }}
+            >
+              {spec.value}
+            </button>
+          ))}
         </div>
-        <div className="flex flex-wrap gap-4 items-center justify-center">
-          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="accent-indigo-600 w-4 h-4"
-              checked={showValues}
-              onChange={() => setShowValues((v) => !v)}
-            />
-            Mostrar valores
-          </label>
-          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input
-              type="checkbox"
-              className="accent-indigo-600 w-4 h-4"
-              checked={showGrid}
-              onChange={() => setShowGrid((v) => !v)}
-            />
-            Cuadrícula / Alinear
-          </label>
+      )}
+      <div
+        ref={containerRef}
+        className={
+          `relative border-2 border-slate-300 rounded-lg shadow-inner bg-white ` +
+          (isFullscreen ? "w-full h-[100dvh] flex" : "")
+        }
+        style={isFullscreen ? { zIndex: 50 } : undefined}
+      >
+        {isFullscreen && (
+          <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm p-3 rounded-lg shadow-md flex flex-wrap gap-3 max-w-[80%]">
+            {ROD_SPECS.map((spec) => (
+              <button
+                key={spec.value}
+                type="button"
+                onPointerDown={(e) =>
+                  startFromPalette(spec, e.clientX, e.clientY)
+                }
+                className="transition-transform hover:scale-110 border-2 border-slate-600 rounded flex items-center justify-center font-bold cursor-grab active:cursor-grabbing shadow-sm"
+                style={{
+                  width: spec.value * BASE_WIDTH * 0.9,
+                  height: ROD_HEIGHT * 0.9,
+                  background: spec.color,
+                  color: spec.textColor,
+                }}
+                title={`${spec.name} (${spec.value})`}
+              >
+                {spec.value}
+              </button>
+            ))}
+          </div>
+        )}
+        <canvas
+          ref={canvasRef}
+          className={
+            "w-full " +
+            (isFullscreen
+              ? "flex-1 h-full cursor-crosshair"
+              : "h-96 cursor-crosshair") +
+            " touch-none select-none rounded-md"
+          }
+          onPointerDown={onCanvasPointerDown}
+          onDoubleClick={onCanvasDoubleClick}
+        />
+        {isFullscreen && (
+          <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm p-4 rounded-lg shadow text-sm flex flex-col gap-3 max-w-[75%]">
+            <div className="flex items-center gap-3 text-slate-700 font-semibold">
+              <span>Total:</span>
+              <span className="text-xl font-bold text-indigo-600">{total}</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={clear}
+                className="bg-red-500 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded-md shadow-sm text-xs transition-colors"
+              >
+                Limpiar
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600 w-4 h-4"
+                  checked={showValues}
+                  onChange={() => setShowValues((v) => !v)}
+                />
+                Valores
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600 w-4 h-4"
+                  checked={showGrid}
+                  onChange={() => setShowGrid((v) => !v)}
+                />
+                Cuadrícula
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-[12px] leading-snug">
+              <div>
+                <kbd className="px-1 py-0.5 bg-slate-200 rounded border">R</kbd>{" "}
+                Rotar
+              </div>
+              <div>
+                <kbd className="px-1 py-0.5 bg-slate-200 rounded border">F</kbd>{" "}
+                Pantalla
+              </div>
+              <div>
+                <kbd className="px-1 py-0.5 bg-slate-200 rounded border">
+                  Delete
+                </kbd>{" "}
+                Borrar
+              </div>
+              <div>
+                <kbd className="px-1 py-0.5 bg-slate-200 rounded border">
+                  Esc
+                </kbd>{" "}
+                Salir FS*
+              </div>
+            </div>
+            <div className="text-[11px] text-slate-500">
+              *También botón o tecla F para salir.
+            </div>
+          </div>
+        )}
+        {!isFullscreen && (
+          <div className="absolute bottom-2 left-2 bg-white/90 backdrop-blur-sm p-3 rounded-md shadow text-[11px] flex flex-col gap-2 max-w-[70%]">
+            <div className="flex items-center gap-2 text-slate-700 font-semibold">
+              <span>Total:</span>
+              <span className="text-lg font-bold text-indigo-600">{total}</span>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              <label className="flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600 w-4 h-4"
+                  checked={showValues}
+                  onChange={() => setShowValues((v) => !v)}
+                />
+                Valores
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  className="accent-indigo-600 w-4 h-4"
+                  checked={showGrid}
+                  onChange={() => setShowGrid((v) => !v)}
+                />
+                Cuadrícula
+              </label>
+            </div>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              if (!isFullscreen) {
+                await containerRef.current?.requestFullscreen();
+              } else if (document.fullscreenElement) {
+                await document.exitFullscreen();
+              }
+            } catch (err) {
+              console.error("Fullscreen error", err);
+            }
+          }}
+          className="absolute top-2 right-2 bg-indigo-600/90 hover:bg-indigo-600 text-white text-xs font-semibold px-3 py-2 rounded-md shadow focus:outline-none focus:ring-2 focus:ring-indigo-400"
+        >
+          {isFullscreen ? "Salir Pantalla Completa" : "Pantalla Completa"}
+        </button>
+      </div>
+      {!isFullscreen && (
+        <div className="rounded-lg border border-slate-300 bg-white/70 p-4 text-xs leading-relaxed shadow-sm">
+          <h3 className="font-bold text-slate-700 mb-2 text-sm">
+            Atajos de Teclado
+          </h3>
+          <ul className="flex flex-wrap gap-x-6 gap-y-1">
+            <li className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 bg-slate-200 rounded border text-[10px]">
+                R
+              </kbd>
+              <span>Rotar</span>
+            </li>
+            <li className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 bg-slate-200 rounded border text-[10px]">
+                Delete
+              </kbd>
+              <kbd className="px-1.5 py-0.5 bg-slate-200 rounded border text-[10px]">
+                Backspace
+              </kbd>
+              <span>Borrar</span>
+            </li>
+            <li className="flex items-center gap-2">
+              <kbd className="px-1.5 py-0.5 bg-slate-200 rounded border text-[10px]">
+                F
+              </kbd>
+              <span>Pantalla completa</span>
+            </li>
+          </ul>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-3 items-center justify-center bg-slate-200/60 rounded-lg p-3">
-        {ROD_SPECS.map((spec) => (
-          <button
-            key={spec.value}
-            type="button"
-            onPointerDown={(e) => startFromPalette(spec, e.clientX, e.clientY)}
-            className="transition-transform hover:scale-110 border-2 border-slate-600 rounded flex items-center justify-center font-bold cursor-grab active:cursor-grabbing"
-            style={{
-              width: spec.value * BASE_WIDTH * 0.75,
-              height: ROD_HEIGHT * 0.75,
-              background: spec.color,
-              color: spec.textColor,
-            }}
-          >
-            {spec.value}
-          </button>
-        ))}
-      </div>
-      <canvas
-        ref={canvasRef}
-        className="w-full h-96 bg-white border-2 border-slate-300 rounded-lg shadow-inner cursor-grab active:cursor-grabbing"
-        onPointerDown={onCanvasPointerDown}
-        onDoubleClick={onCanvasDoubleClick}
-      />
+      )}
       <div className="flex flex-wrap justify-center gap-4">
         <button
           onClick={clear}
