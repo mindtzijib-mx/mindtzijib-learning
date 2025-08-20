@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirigiendo…</title>
+    <meta http-equiv="refresh" content="0; url=./index.html" />
+    <script>
+      // Single Page App fallback for GitHub Pages
+      // Preserve path after redirect
+      (function() {
+        var l = window.location;
+        var origin = l.protocol + '//' + l.host + l.pathname.split('/').slice(0, -1).join('/') + '/';
+        var redirect = origin + 'index.html' + l.search + l.hash;
+        window.location.replace(redirect);
+      })();
+    </script>
+  </head>
+  <body>
+    <noscript>
+      Necesitas habilitar JavaScript para ver este sitio.
+    </noscript>
+  </body>
+</html>
