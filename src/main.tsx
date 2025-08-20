@@ -5,9 +5,13 @@ import App from "./App.tsx";
 import Home from "./routes/Home.tsx";
 import Cuisenaire from "./routes/Cuisenaire.tsx";
 
+// Detect if served under GitHub Pages subpath
+const slug = "/mindtzijib-learning";
+const needsBase = window.location.pathname.startsWith(slug + "/");
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter basename="/mindtzijib-learning">
+    <BrowserRouter basename={needsBase ? slug : undefined}>
       <Routes>
         <Route path="/" element={<App />}>
           <Route index element={<Home />} />
