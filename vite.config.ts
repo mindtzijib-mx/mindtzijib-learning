@@ -1,8 +1,8 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Usamos base '/' siempre; en producción GH Pages los assets se sirven igual al copiar dist dentro del slug.
+// Para GitHub Pages, necesitamos usar el nombre del repositorio como base
 export default defineConfig({
-  base: "/",
+  base: "/mindtzijib-learning/",
   plugins: [react()],
 });
