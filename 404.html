@@ -8,17 +8,20 @@
     <script>
       // Single Page App fallback for GitHub Pages
       // Preserve path after redirect
-      (function() {
+      (function () {
         var l = window.location;
-        var origin = l.protocol + '//' + l.host + l.pathname.split('/').slice(0, -1).join('/') + '/';
-        var redirect = origin + 'index.html' + l.search + l.hash;
+        var origin =
+          l.protocol +
+          "//" +
+          l.host +
+          l.pathname.split("/").slice(0, -1).join("/") +
+          "/";
+        var redirect = origin + "index.html" + l.search + l.hash;
         window.location.replace(redirect);
       })();
     </script>
   </head>
   <body>
-    <noscript>
-      Necesitas habilitar JavaScript para ver este sitio.
-    </noscript>
+    <noscript> Necesitas habilitar JavaScript para ver este sitio. </noscript>
   </body>
 </html>
