@@ -1,455 +1,661 @@
 <!DOCTYPE html>
 <html lang="es">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Regletas de Cuisenaire con IA</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Regletas de Cuisenaire – Canvas</title>
     <style>
+      :root {
+        --bg: #0b1220;
+        --panel: #0f172a;
+        --muted: #94a3b8;
+        --accent: #22d3ee;
+        --grid: #1e293b;
+        --unit: 40; /* tamaño base de 1 unidad, en px */
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
       body {
-        font-family: "Inter", sans-serif;
-        touch-action: none;
+        height: 100%;
+        margin: 0;
+        background: var(--bg);
+        color: #e2e8f0;
+        font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, Ubuntu,
+          "Helvetica Neue", Arial;
+      }
+      .app {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 10px;
+        height: 100%;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 12px;
+        background: linear-gradient(180deg, #0f172a, #0b1220);
+        border-bottom: 1px solid #1f2937;
+        position: sticky;
+        top: 0;
+        z-index: 3;
+      }
+      header h1 {
+        font-size: 16px;
+        margin: 0;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+      }
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-left: auto;
+      }
+      .btn {
+        appearance: none;
+        border: 1px solid #334155;
+        background: #0b1220;
+        color: #e2e8f0;
+        padding: 8px 10px;
+        border-radius: 12px;
+        cursor: pointer;
+        font-size: 13px;
+      }
+      .btn:hover {
+        border-color: #64748b;
+      }
+      .btn[aria-pressed="true"] {
+        outline: 2px solid var(--accent);
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .palette {
+        display: flex;
+        gap: 6px;
+        background: #0b1220;
+        padding: 8px;
+        border-radius: 12px;
+        border: 1px solid #334155;
+      }
+      .swatch {
+        width: 36px;
+        height: 22px;
+        border-radius: 8px;
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 12px;
+        color: #0b1220;
+        cursor: pointer;
+        position: relative;
+      }
+      .swatch[data-n="1"] {
+        color: #0b1220;
+        border-color: #94a3b8;
+      }
+      .swatch[data-active="true"] {
+        outline: 2px solid var(--accent);
+      }
+      .legend {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .stage {
+        position: relative;
+        height: 100%;
       }
       canvas {
-        cursor: grab;
-        background-image: linear-gradient(
-            rgba(0, 0, 0, 0.05) 1px,
-            transparent 1px
-          ),
-          linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
-        background-size: 20px 20px;
+        width: 100%;
+        height: 100%;
+        display: block;
+        background: radial-gradient(
+          1200px 800px at 10% 10%,
+          #0c1426 0,
+          #0b1220 60%,
+          #0b1220 100%
+        );
+        border-top: 1px solid #1f2937;
+        border-bottom: 1px solid #1f2937;
       }
-      canvas:active {
-        cursor: grabbing;
+
+      .hud {
+        position: absolute;
+        right: 12px;
+        top: 12px;
+        background: #0b1220a6;
+        border: 1px solid #334155;
+        padding: 8px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        color: #cbd5e1;
+        backdrop-filter: blur(6px);
       }
-      /* Estilos para el modal de Gemini */
-      #geminiModal {
-        transition: opacity 0.3s ease;
+      .hud kbd {
+        background: #111827;
+        border: 1px solid #374151;
+        border-bottom-width: 2px;
+        border-radius: 6px;
+        padding: 2px 6px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 11px;
+        color: #e5e7eb;
       }
-      /* Animación del spinner */
-      .loader {
-        border: 4px solid #f3f3f3;
-        border-top: 4px solid #3498db;
-        border-radius: 50%;
-        width: 40px;
-        height: 40px;
-        animation: spin 1s linear infinite;
+
+      footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        border-top: 1px solid #1f2937;
+        background: #0b1220;
+        color: #94a3b8;
+        font-size: 12px;
       }
-      @keyframes spin {
-        0% {
-          transform: rotate(0deg);
-        }
-        100% {
-          transform: rotate(360deg);
-        }
+      .slider {
+        accent-color: #22d3ee;
       }
     </style>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
-      rel="stylesheet"
-    />
   </head>
-  <body
-    class="bg-slate-100 text-slate-800 flex flex-col items-center justify-center min-h-screen p-4"
-  >
-    <div
-      class="w-full max-w-5xl bg-white rounded-xl shadow-lg p-4 sm:p-6 relative"
-    >
-      <header class="text-center mb-4">
-        <h1 class="text-2xl sm:text-3xl font-bold text-slate-700">
-          Regletas de Cuisenaire con IA
-        </h1>
-        <p class="text-sm sm:text-base text-slate-500">
-          Arrastra, alinea y suma. Haz doble clic para eliminar una regleta.
-        </p>
+  <body>
+    <div class="app">
+      <header>
+        <h1>Regletas de Cuisenaire – Lienzo interactivo</h1>
+        <div class="row" style="margin-left: 12px">
+          <div class="palette" id="palette"></div>
+          <span class="legend"
+            >Haz clic en un color y luego en el lienzo para colocar una
+            regleta.</span
+          >
+        </div>
+        <div class="toolbar">
+          <button
+            class="btn"
+            id="toggleOrient"
+            title="Alternar orientación (R)"
+          >
+            Orientación: <span id="orientLbl">Horizontal</span>
+          </button>
+          <button
+            class="btn"
+            id="snapBtn"
+            aria-pressed="true"
+            title="Activar/desactivar ajuste a cuadrícula (G)"
+          >
+            Ajuste a cuadrícula
+          </button>
+          <button
+            class="btn"
+            id="labelsBtn"
+            aria-pressed="false"
+            title="Mostrar/ocultar etiquetas (L)"
+          >
+            Mostrar longitudes
+          </button>
+          <button
+            class="btn"
+            id="clearBtn"
+            title="Eliminar todas (Ctrl+Backspace)"
+          >
+            Limpiar
+          </button>
+          <button class="btn" id="exportBtn" title="Guardar como PNG">
+            Exportar PNG
+          </button>
+          <button class="btn" id="saveJsonBtn" title="Guardar como JSON">
+            Guardar JSON
+          </button>
+          <button class="btn" id="loadJsonBtn" title="Cargar JSON">
+            Cargar JSON
+          </button>
+          <input
+            id="fileInput"
+            type="file"
+            accept="application/json"
+            style="display: none"
+          />
+        </div>
       </header>
 
-      <div
-        id="totalSumContainer"
-        class="text-center mb-4 p-3 bg-blue-100 border border-blue-300 rounded-lg"
-      >
-        <span class="text-lg font-medium text-slate-600"
-          >Suma Total en el Lienzo:</span
-        >
-        <span id="totalSum" class="text-2xl font-bold text-blue-600">0</span>
-      </div>
-
-      <div
-        id="palette"
-        class="bg-slate-200/60 rounded-lg p-3 mb-4 flex flex-wrap justify-center items-center gap-3"
-      ></div>
-
-      <canvas
-        id="mainCanvas"
-        class="w-full h-96 bg-white border-2 border-slate-300 rounded-lg shadow-inner"
-      ></canvas>
-
-      <div class="mt-4 flex flex-wrap justify-center gap-4">
-        <button
-          id="geminiButton"
-          class="bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white font-bold py-2 px-5 rounded-lg shadow-md transition-transform transform hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          ✨ Explicar Suma
-        </button>
-        <button
-          id="clearButton"
-          class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-5 rounded-lg shadow-md transition-transform transform hover:scale-105 active:scale-95"
-        >
-          Limpiar Lienzo
-        </button>
-      </div>
-
-      <!-- Modal para la respuesta de Gemini -->
-      <div
-        id="geminiModal"
-        class="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 rounded-xl hidden"
-      >
-        <div
-          class="bg-white rounded-lg shadow-2xl p-6 max-w-md w-full relative"
-        >
-          <button
-            id="closeGeminiModal"
-            class="absolute top-2 right-3 text-2xl text-gray-500 hover:text-gray-800"
-          >
-            &times;
-          </button>
-          <div id="geminiResponseContainer" class="text-slate-700">
-            <!-- El contenido se insertará aquí -->
+      <div class="stage" id="stage">
+        <canvas id="canvas" width="1400" height="800"></canvas>
+        <div class="hud">
+          <div><strong>Atajos</strong></div>
+          <div>
+            <kbd>R</kbd> rotar orientación • <kbd>G</kbd> cuadrícula •
+            <kbd>L</kbd> etiquetas
+          </div>
+          <div>
+            <kbd>Supr</kbd> borrar selección • <kbd>Ctrl</kbd> arrastrar =
+            duplicar
+          </div>
+          <div>
+            <kbd>Shift</kbd> arrastrar = mantener eje •
+            <kbd>Ctrl+D</kbd> duplicar
           </div>
         </div>
       </div>
+
+      <footer>
+        <div>
+          Unidades:
+          <input
+            id="unitSlider"
+            class="slider"
+            type="range"
+            min="20"
+            max="60"
+            step="2"
+            value="40"
+          />
+          <span id="unitLbl">40 px</span>
+        </div>
+        <div>Regletas seleccionadas: <span id="selCount">0</span></div>
+      </footer>
     </div>
 
     <script>
-      // --- CONFIGURACIÓN INICIAL ---
-      const canvas = document.getElementById("mainCanvas");
+      // Mapeo clásico de colores Cuisenaire (aproximados)
+      const COLORS = {
+        1: "#ffffff", // blanco
+        2: "#ef4444", // rojo
+        3: "#34d399", // verde claro
+        4: "#f472b6", // rosa
+        5: "#f59e0b", // amarillo
+        6: "#065f46", // verde oscuro
+        7: "#0f172a", // negro azulado (mejor contraste)
+        8: "#92400e", // café
+        9: "#2563eb", // azul
+        10: "#fb923c", // naranja
+      };
+
+      const paletteEl = document.getElementById("palette");
+      const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
-      const paletteContainer = document.getElementById("palette");
-      const clearButton = document.getElementById("clearButton");
-      const totalSumElement = document.getElementById("totalSum");
-      const geminiButton = document.getElementById("geminiButton");
-      const geminiModal = document.getElementById("geminiModal");
-      const geminiResponseContainer = document.getElementById(
-        "geminiResponseContainer"
-      );
-      const closeGeminiModal = document.getElementById("closeGeminiModal");
+      const unitSlider = document.getElementById("unitSlider");
+      const unitLbl = document.getElementById("unitLbl");
+      const orientLbl = document.getElementById("orientLbl");
+      const snapBtn = document.getElementById("snapBtn");
+      const labelsBtn = document.getElementById("labelsBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const exportBtn = document.getElementById("exportBtn");
+      const saveJsonBtn = document.getElementById("saveJsonBtn");
+      const loadJsonBtn = document.getElementById("loadJsonBtn");
+      const fileInput = document.getElementById("fileInput");
+      const selCount = document.getElementById("selCount");
 
-      const ROD_SPECS = [
-        { value: 1, color: "#FFFFFF", textColor: "#333333", name: "Blanca" },
-        { value: 2, color: "#FF0000", textColor: "#FFFFFF", name: "Roja" },
-        {
-          value: 3,
-          color: "#90EE90",
-          textColor: "#333333",
-          name: "Verde Claro",
-        },
-        { value: 4, color: "#FFC0CB", textColor: "#333333", name: "Rosa" },
-        { value: 5, color: "#FFFF00", textColor: "#333333", name: "Amarilla" },
-        {
-          value: 6,
-          color: "#008000",
-          textColor: "#FFFFFF",
-          name: "Verde Oscuro",
-        },
-        { value: 7, color: "#000000", textColor: "#FFFFFF", name: "Negra" },
-        { value: 8, color: "#A52A2A", textColor: "#FFFFFF", name: "Marrón" },
-        { value: 9, color: "#0000FF", textColor: "#FFFFFF", name: "Azul" },
-        { value: 10, color: "#FFA500", textColor: "#FFFFFF", name: "Naranja" },
-      ];
+      let UNIT =
+        parseInt(
+          getComputedStyle(document.documentElement).getPropertyValue("--unit")
+        ) || 40;
+      let GRID_ON = true;
+      let SHOW_LABELS = false;
+      let DEFAULT_ORIENT = "H"; // 'H' o 'V'
 
-      const ROD_HEIGHT = 40;
-      const BASE_WIDTH = 40;
-      const SNAP_THRESHOLD = 15;
-      const GRID_SIZE = 5;
+      // Estado
+      const rods = []; // {id,x,y,len,ori,color}
+      let selected = new Set();
+      let hoverId = null;
 
-      let canvasRods = [];
-      let selectedRod = null;
-      let isDragging = false;
-      let dragOffsetX = 0;
-      let dragOffsetY = 0;
+      // Crear paleta
+      let currentLen = 5;
+      Object.entries(COLORS).forEach(([n, color]) => {
+        const sw = document.createElement("button");
+        sw.className = "swatch";
+        sw.style.background = color;
+        sw.dataset.n = n;
+        sw.title = `Regleta ${n}u`;
+        sw.innerHTML = `<span>${n}</span>`;
+        sw.addEventListener("click", () => {
+          currentLen = parseInt(n);
+          [...paletteEl.children].forEach(
+            (el) => (el.dataset.active = "false")
+          );
+          sw.dataset.active = "true";
+        });
+        paletteEl.appendChild(sw);
+        if (parseInt(n) === currentLen) sw.dataset.active = "true";
+      });
 
-      // --- FUNCIONES DE LA API DE GEMINI ---
+      // Utilidades
+      const genId = (() => {
+        let i = 1;
+        return () => `r${i++}`;
+      })();
+      const snap = (v) => (GRID_ON ? Math.round(v / UNIT) * UNIT : v);
 
-      /**
-       * Llama a la API de Gemini para obtener una explicación de la suma.
-       * @param {number} sum - La suma total a explicar.
-       */
-      async function getExplanationFromGemini(sum) {
-        geminiButton.disabled = true;
-        geminiResponseContainer.innerHTML =
-          '<div class="flex flex-col items-center"><div class="loader"></div><p class="mt-3 text-slate-500">Creando una historia para ti...</p></div>';
-        geminiModal.classList.remove("hidden");
+      function addRod(px, py, len = currentLen, ori = DEFAULT_ORIENT) {
+        const id = genId();
+        const x = snap(px);
+        const y = snap(py);
+        rods.push({ id, x, y, len, ori, color: COLORS[len] });
+        selected = new Set([id]);
+        draw();
+      }
 
-        const prompt = `Eres un profesor de primaria amigable y creativo. Crea un problema matemático muy simple y visual para un niño, donde la respuesta sea ${sum}. Usa ejemplos del mundo real como juguetes, frutas o animales. Termina con la operación matemática. Por ejemplo, si la suma es 5, podrías decir: 'Imagina que tienes 2 gatitos jugando y de repente llegan 3 más. ¿Cuántos gatitos tienes ahora? ¡Correcto, 5 gatitos! 2 + 3 = 5'.`;
-
-        let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
-        const payload = { contents: chatHistory };
-        const apiKey = ""; // Se proporciona en el entorno de ejecución
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
-
-        try {
-          const response = await fetch(apiUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
-          const result = await response.json();
-          if (
-            result.candidates &&
-            result.candidates[0] &&
-            result.candidates[0].content.parts[0].text
-          ) {
-            const explanation =
-              result.candidates[0].content.parts[0].text.replace(/\n/g, "<br>");
-            geminiResponseContainer.innerHTML = `<h3 class="text-lg font-bold mb-2 text-indigo-600">✨ ¡Vamos a sumar!</h3><p>${explanation}</p>`;
-          } else {
-            throw new Error("Respuesta inesperada de la API.");
-          }
-        } catch (error) {
-          console.error("Error al llamar a la API de Gemini:", error);
-          geminiResponseContainer.innerHTML =
-            '<p class="text-red-500">¡Oh no! No pude conectar con mi ayudante IA. Por favor, inténtalo de nuevo más tarde.</p>';
-        } finally {
-          geminiButton.disabled = false;
+      function removeSelected() {
+        if (selected.size === 0) return;
+        for (const id of selected) {
+          const idx = rods.findIndex((r) => r.id === id);
+          if (idx >= 0) rods.splice(idx, 1);
         }
+        selected.clear();
+        draw();
       }
 
-      // --- FUNCIONES DE CÁLCULO Y DIBUJO ---
-
-      function updateTotalSum() {
-        const total = canvasRods.reduce((sum, rod) => sum + rod.value, 0);
-        totalSumElement.textContent = total;
-        // Habilitar o deshabilitar el botón de Gemini
-        geminiButton.disabled = total === 0;
+      function duplicateSelected() {
+        const news = [];
+        selected.forEach((id) => {
+          const r = rods.find((rr) => rr.id === id);
+          if (!r) return;
+          const id2 = genId();
+          news.push({ ...r, id: id2, x: r.x + UNIT / 2, y: r.y + UNIT / 2 });
+        });
+        news.forEach((n) => rods.push(n));
+        selected = new Set(news.map((n) => n.id));
+        draw();
       }
 
-      function drawRod(rod) {
-        ctx.fillStyle = rod.color;
-        ctx.strokeStyle = "#4A5568";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.roundRect(rod.x, rod.y, rod.width, rod.height, [4]);
+      // Dibujo
+      function drawGrid() {
+        if (!GRID_ON) return;
+        ctx.save();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "#1e293b";
+        for (let x = 0; x < canvas.width; x += UNIT) {
+          ctx.beginPath();
+          ctx.moveTo(x + 0.5, 0);
+          ctx.lineTo(x + 0.5, canvas.height);
+          ctx.stroke();
+        }
+        for (let y = 0; y < canvas.height; y += UNIT) {
+          ctx.beginPath();
+          ctx.moveTo(0, y + 0.5);
+          ctx.lineTo(canvas.width, y + 0.5);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawRod(r) {
+        const w = (r.ori === "H" ? r.len : 1) * UNIT;
+        const h = (r.ori === "V" ? r.len : 1) * UNIT;
+        const radius = 10;
+
+        // sombra
+        ctx.save();
+        ctx.shadowColor = "rgba(0,0,0,.35)";
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetY = 4;
+
+        // cuerpo con esquinas redondeadas
+        roundRect(ctx, r.x, r.y, w, h, radius);
+        ctx.fillStyle = r.color;
         ctx.fill();
+        ctx.restore();
+
+        // borde de contraste
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = r.len === 1 ? "#94a3b8" : "rgba(255,255,255,.22)";
+        roundRect(ctx, r.x, r.y, w, h, radius);
         ctx.stroke();
 
-        ctx.fillStyle = rod.textColor;
-        ctx.font = "bold 16px Inter";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(rod.value, rod.x + rod.width / 2, rod.y + rod.height / 2);
+        // etiqueta
+        if (SHOW_LABELS) {
+          ctx.save();
+          ctx.font = "bold 14px ui-sans-serif, system-ui";
+          ctx.fillStyle = r.len === 7 ? "#e5e7eb" : "#0b1220";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(`${r.len}`, r.x + w / 2, r.y + h / 2);
+          ctx.restore();
+        }
+
+        // selección / hover
+        if (selected.has(r.id) || hoverId === r.id) {
+          ctx.save();
+          const pad = 3;
+          roundRect(ctx, r.x - pad, r.y - pad, w + pad * 2, h + pad * 2, 12);
+          ctx.strokeStyle = selected.has(r.id)
+            ? "#22d3ee"
+            : "rgba(34,211,238,.5)";
+          ctx.lineWidth = selected.has(r.id) ? 2.5 : 1.5;
+          ctx.setLineDash(selected.has(r.id) ? [6, 4] : [3, 5]);
+          ctx.stroke();
+          ctx.restore();
+        }
       }
 
-      function redrawCanvas() {
+      function roundRect(ctx, x, y, w, h, r) {
+        const rr = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + rr, y);
+        ctx.lineTo(x + w - rr, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+        ctx.lineTo(x + w, y + h - rr);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+        ctx.lineTo(x + rr, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+        ctx.lineTo(x, y + rr);
+        ctx.quadraticCurveTo(x, y, x + rr, y);
+        ctx.closePath();
+      }
+
+      function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        canvasRods.forEach(drawRod);
-        if (isDragging && selectedRod) {
-          drawRod(selectedRod);
+        drawGrid();
+        // orden por profundidad simple: dibujo en orden de inserción
+        rods.forEach((r) => drawRod(r));
+        selCount.textContent = selected.size;
+      }
+
+      // Interacción
+      let isDragging = false;
+      let dragId = null;
+      let dragOffset = { x: 0, y: 0 };
+      let dragStart = { x: 0, y: 0 };
+
+      function hitTest(mx, my) {
+        // recorrer invertido para tomar el de arriba
+        for (let i = rods.length - 1; i >= 0; i--) {
+          const r = rods[i];
+          const w = (r.ori === "H" ? r.len : 1) * UNIT;
+          const h = (r.ori === "V" ? r.len : 1) * UNIT;
+          if (mx >= r.x && mx <= r.x + w && my >= r.y && my <= r.y + h)
+            return r.id;
         }
+        return null;
       }
 
-      function createPalette() {
-        ROD_SPECS.forEach((spec) => {
-          const rodEl = document.createElement("div");
-          rodEl.style.width = `${spec.value * BASE_WIDTH * 0.75}px`;
-          rodEl.style.height = `${ROD_HEIGHT * 0.75}px`;
-          rodEl.style.backgroundColor = spec.color;
-          rodEl.style.border = "2px solid #4A5568";
-          rodEl.style.borderRadius = "4px";
-          rodEl.style.display = "flex";
-          rodEl.style.alignItems = "center";
-          rodEl.style.justifyContent = "center";
-          rodEl.style.color = spec.textColor;
-          rodEl.style.fontWeight = "bold";
-          rodEl.style.cursor = "grab";
-          rodEl.className =
-            "palette-rod transition-transform transform hover:scale-110";
-          rodEl.innerText = spec.value;
-          rodEl.dataset.value = spec.value;
-
-          rodEl.addEventListener("mousedown", handlePaletteDragStart);
-          rodEl.addEventListener("touchstart", handlePaletteDragStart, {
-            passive: false,
-          });
-
-          paletteContainer.appendChild(rodEl);
-        });
-      }
-
-      // --- MANEJO DE EVENTOS ---
-
-      function getEventCoords(e) {
+      canvas.addEventListener("mousemove", (e) => {
         const rect = canvas.getBoundingClientRect();
-        if (e.touches && e.touches.length > 0) {
-          return {
-            x: e.touches[0].clientX - rect.left,
-            y: e.touches[0].clientY - rect.top,
-          };
-        }
-        return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      }
+        const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const my = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-      function handlePaletteDragStart(e) {
+        if (isDragging && dragId) {
+          const r = rods.find((rr) => rr.id === dragId);
+          if (!r) return;
+          let nx = mx - dragOffset.x;
+          let ny = my - dragOffset.y;
+          if (e.shiftKey) {
+            // mantener eje: el más largo domina
+            if (r.ori === "H") ny = dragStart.y;
+            else nx = dragStart.x;
+          }
+          r.x = GRID_ON ? snap(nx) : nx;
+          r.y = GRID_ON ? snap(ny) : ny;
+          draw();
+          return;
+        }
+
+        const id = hitTest(mx, my);
+        hoverId = id;
+        draw();
+      });
+
+      canvas.addEventListener("mousedown", (e) => {
         e.preventDefault();
-        const value = parseInt(e.target.dataset.value);
-        const spec = ROD_SPECS.find((s) => s.value === value);
-        const coords = getEventCoords(e);
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+        const my = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-        selectedRod = {
-          ...spec,
-          width: spec.value * BASE_WIDTH,
-          height: ROD_HEIGHT,
-          x: coords.x - (spec.value * BASE_WIDTH) / 2,
-          y: coords.y - ROD_HEIGHT / 2,
-          isNew: true,
-        };
-        isDragging = true;
-        dragOffsetX = (spec.value * BASE_WIDTH) / 2;
-        dragOffsetY = ROD_HEIGHT / 2;
-        redrawCanvas();
-      }
-
-      function handleCanvasMouseDown(e) {
-        e.preventDefault();
-        const coords = getEventCoords(e);
-        for (let i = canvasRods.length - 1; i >= 0; i--) {
-          const rod = canvasRods[i];
-          if (
-            coords.x >= rod.x &&
-            coords.x <= rod.x + rod.width &&
-            coords.y >= rod.y &&
-            coords.y <= rod.y + rod.height
-          ) {
-            selectedRod = rod;
-            canvasRods.splice(i, 1);
-            canvasRods.push(selectedRod);
-            isDragging = true;
-            dragOffsetX = coords.x - rod.x;
-            dragOffsetY = coords.y - rod.y;
-            break;
+        const id = hitTest(mx, my);
+        if (id) {
+          const r = rods.find((rr) => rr.id === id);
+          if (e.ctrlKey) {
+            // duplicar al arrastrar
+            const copy = { ...r, id: genId(), x: r.x + 4, y: r.y + 4 };
+            rods.push(copy);
+            selected = new Set([copy.id]);
+            dragId = copy.id;
+          } else {
+            selected = new Set([id]);
+            dragId = id;
           }
+          const rr = rods.find((x) => x.id === dragId);
+          const w = (rr.ori === "H" ? rr.len : 1) * UNIT;
+          const h = (rr.ori === "V" ? rr.len : 1) * UNIT;
+          dragOffset.x = mx - rr.x;
+          dragOffset.y = my - rr.y;
+          dragStart.x = rr.x;
+          dragStart.y = rr.y;
+          isDragging = true;
+          draw();
+        } else {
+          // colocar una nueva
+          addRod(mx - UNIT / 2, my - UNIT / 2, currentLen, DEFAULT_ORIENT);
         }
-        redrawCanvas();
-      }
+      });
 
-      function handleMouseMove(e) {
-        if (!isDragging || !selectedRod) return;
-        e.preventDefault();
-        const coords = getEventCoords(e);
-        const rawX = coords.x - dragOffsetX;
-        const rawY = coords.y - dragOffsetY;
-        selectedRod.x = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
-        selectedRod.y = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
-        redrawCanvas();
-      }
-
-      function handleMouseUp(e) {
-        if (!isDragging || !selectedRod) return;
-        let snapped = false;
-        const otherRods = canvasRods.filter((r) => r !== selectedRod);
-        for (const otherRod of otherRods) {
-          if (
-            Math.abs(otherRod.x + otherRod.width - selectedRod.x) <
-            SNAP_THRESHOLD
-          ) {
-            selectedRod.x = otherRod.x + otherRod.width;
-            snapped = true;
-          }
-          if (
-            Math.abs(otherRod.x - (selectedRod.x + selectedRod.width)) <
-            SNAP_THRESHOLD
-          ) {
-            selectedRod.x = otherRod.x - selectedRod.width;
-            snapped = true;
-          }
-          if (
-            Math.abs(otherRod.y + otherRod.height - selectedRod.y) <
-            SNAP_THRESHOLD
-          ) {
-            selectedRod.y = otherRod.y + otherRod.height;
-            snapped = true;
-          }
-          if (
-            Math.abs(otherRod.y - (selectedRod.y + selectedRod.height)) <
-            SNAP_THRESHOLD
-          ) {
-            selectedRod.y = otherRod.y - selectedRod.height;
-            snapped = true;
-          }
-          if (snapped) break;
-        }
-        if (selectedRod.isNew) {
-          delete selectedRod.isNew;
-          canvasRods.push(selectedRod);
-        }
+      window.addEventListener("mouseup", () => {
         isDragging = false;
-        selectedRod = null;
-        redrawCanvas();
-        updateTotalSum();
-      }
+        dragId = null;
+        draw();
+      });
 
-      function handleCanvasDoubleClick(e) {
-        e.preventDefault();
-        const coords = getEventCoords(e);
-        let foundIndex = -1;
-        for (let i = canvasRods.length - 1; i >= 0; i--) {
-          const rod = canvasRods[i];
-          if (
-            coords.x >= rod.x &&
-            coords.x <= rod.x + rod.width &&
-            coords.y >= rod.y &&
-            coords.y <= rod.y + rod.height
-          ) {
-            foundIndex = i;
-            break;
+      // Teclado
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Delete" || e.key === "Backspace") {
+          if (e.ctrlKey) {
+            // Ctrl+Backspace = limpiar todo
+            rods.length = 0;
+            selected.clear();
+            draw();
+          } else {
+            removeSelected();
           }
+          e.preventDefault();
         }
-        if (foundIndex !== -1) {
-          canvasRods.splice(foundIndex, 1);
-          redrawCanvas();
-          updateTotalSum();
+        if (e.key.toLowerCase() === "r") {
+          DEFAULT_ORIENT = DEFAULT_ORIENT === "H" ? "V" : "H";
+          orientLbl.textContent =
+            DEFAULT_ORIENT === "H" ? "Horizontal" : "Vertical";
         }
-      }
-
-      function resizeCanvas() {
-        canvas.width = canvas.clientWidth;
-        canvas.height = canvas.clientHeight;
-        redrawCanvas();
-      }
-
-      clearButton.addEventListener("click", () => {
-        canvasRods = [];
-        redrawCanvas();
-        updateTotalSum();
-      });
-
-      geminiButton.addEventListener("click", () => {
-        const total = canvasRods.reduce((sum, rod) => sum + rod.value, 0);
-        if (total > 0) {
-          getExplanationFromGemini(total);
+        if (e.key.toLowerCase() === "g") {
+          GRID_ON = !GRID_ON;
+          snapBtn.setAttribute("aria-pressed", GRID_ON);
+          draw();
+        }
+        if (e.key.toLowerCase() === "l") {
+          SHOW_LABELS = !SHOW_LABELS;
+          labelsBtn.setAttribute("aria-pressed", SHOW_LABELS);
+          draw();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "d") {
+          duplicateSelected();
+          e.preventDefault();
         }
       });
 
-      closeGeminiModal.addEventListener("click", () => {
-        geminiModal.classList.add("hidden");
+      // Controles de UI
+      document.getElementById("toggleOrient").addEventListener("click", () => {
+        DEFAULT_ORIENT = DEFAULT_ORIENT === "H" ? "V" : "H";
+        orientLbl.textContent =
+          DEFAULT_ORIENT === "H" ? "Horizontal" : "Vertical";
       });
 
-      canvas.addEventListener("mousedown", handleCanvasMouseDown);
-      canvas.addEventListener("touchstart", handleCanvasMouseDown, {
-        passive: false,
+      snapBtn.addEventListener("click", () => {
+        GRID_ON = !GRID_ON;
+        snapBtn.setAttribute("aria-pressed", GRID_ON);
+        draw();
       });
-      canvas.addEventListener("dblclick", handleCanvasDoubleClick);
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("touchmove", handleMouseMove, { passive: false });
-      window.addEventListener("mouseup", handleMouseUp);
-      window.addEventListener("touchend", handleMouseUp);
-      window.addEventListener("resize", resizeCanvas);
+      labelsBtn.addEventListener("click", () => {
+        SHOW_LABELS = !SHOW_LABELS;
+        labelsBtn.setAttribute("aria-pressed", SHOW_LABELS);
+        draw();
+      });
+      clearBtn.addEventListener("click", () => {
+        rods.length = 0;
+        selected.clear();
+        draw();
+      });
 
-      // --- EJECUCIÓN INICIAL ---
-      createPalette();
-      resizeCanvas();
-      updateTotalSum();
+      unitSlider.addEventListener("input", () => {
+        UNIT = parseInt(unitSlider.value);
+        unitLbl.textContent = `${UNIT} px`;
+        draw();
+      });
+
+      exportBtn.addEventListener("click", () => {
+        const link = document.createElement("a");
+        link.download = "cuisenaire_canvas.png";
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+      });
+
+      saveJsonBtn.addEventListener("click", () => {
+        const data = { UNIT, GRID_ON, SHOW_LABELS, DEFAULT_ORIENT, rods };
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "cuisenaire_layout.json";
+        a.click();
+        URL.revokeObjectURL(url);
+      });
+
+      loadJsonBtn.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+            UNIT = data.UNIT ?? UNIT;
+            unitSlider.value = UNIT;
+            unitLbl.textContent = `${UNIT} px`;
+            GRID_ON = data.GRID_ON ?? GRID_ON;
+            snapBtn.setAttribute("aria-pressed", GRID_ON);
+            SHOW_LABELS = data.SHOW_LABELS ?? SHOW_LABELS;
+            labelsBtn.setAttribute("aria-pressed", SHOW_LABELS);
+            DEFAULT_ORIENT = data.DEFAULT_ORIENT ?? DEFAULT_ORIENT;
+            orientLbl.textContent =
+              DEFAULT_ORIENT === "H" ? "Horizontal" : "Vertical";
+            rods.length = 0;
+            (data.rods || []).forEach((r) => rods.push(r));
+            selected.clear();
+            draw();
+          } catch (err) {
+            alert("Archivo JSON no válido");
+          }
+        };
+        reader.readAsText(file);
+      });
+
+      // Inicial
+      draw();
     </script>
   </body>
 </html>
