@@ -13,9 +13,14 @@
         var l = window.location;
         var repoBase = "/mindtzijib-learning"; // must match vite.config.ts base and Router basename
         // Strip the repo base from the current path to get the in-app route
-        var inAppPath = l.pathname.replace(new RegExp("^" + repoBase + "/?"), "");
+        var inAppPath = l.pathname.replace(
+          new RegExp("^" + repoBase + "/?"),
+          ""
+        );
         var encodedPath = encodeURIComponent(inAppPath);
-        var encodedQuery = l.search ? "&q=" + encodeURIComponent(l.search.slice(1)) : "";
+        var encodedQuery = l.search
+          ? "&q=" + encodeURIComponent(l.search.slice(1))
+          : "";
         var target =
           l.protocol +
           "//" +
