@@ -16,6 +16,7 @@ export default function App() {
         <nav style={{ display: "flex", gap: 12 }}>
           <Link to="/">Inicio</Link>
           <Link to="/matematicas/regletas-cuisinaire">Regletas Cuisenaire</Link>
+          <Link to="/lenguaje/prodai">PRODAI</Link>
         </nav>
       </header>
       <main style={{ marginTop: 32 }}>

@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import App from "./App.tsx";
 import Home from "./routes/Home.tsx";
 import Cuisenaire from "./routes/Cuisenaire.tsx";
+import Prodai from "./routes/Prodai.tsx";
 
 // Detect if served under GitHub Pages subpath
 const slug = "/mindtzijib-learning";
@@ -19,6 +20,7 @@ createRoot(document.getElementById("root")!).render(
             path="matematicas/regletas-cuisinaire"
             element={<Cuisenaire />}
           />
+          <Route path="lenguaje/prodai" element={<Prodai />} />
         </Route>
       </Routes>
     </BrowserRouter>
